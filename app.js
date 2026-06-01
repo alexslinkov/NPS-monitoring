@@ -37,12 +37,12 @@ document.addEventListener("DOMContentLoaded", () => {
     button.addEventListener("click", () => applyKpiFilter(button.dataset.kpiFilter, button.dataset.inputId));
   });
   document.querySelectorAll(".kpi-filter-card").forEach((card) => {
-    card.addEventListener("mouseleave", () => {
-      if (!card.matches(":focus-within")) closeKpiCards();
-    });
     card.addEventListener("click", (event) => {
       if (!event.target.closest(".kpi-popover") && !event.target.closest(".kpi-selection-clear")) openKpiCard(card);
     });
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".kpi-filter-card")) closeKpiCards();
   });
   document.querySelectorAll(".kpi-popover input").forEach((input) => {
     input.addEventListener("input", () => renderKpiSuggestions(input));
@@ -302,6 +302,7 @@ function openKpiCard(card) {
   document.querySelector(".app-shell").classList.add("kpi-focus-mode");
   const input = card.querySelector(".kpi-popover input");
   renderKpiSuggestions(input);
+  requestAnimationFrame(() => input.focus());
 }
 
 function closeKpiCards() {
@@ -480,6 +481,7 @@ function renderTrainerCountChart() {
     labelFn: shortenName,
     pad: { top: 4, right: 28, bottom: 2, left: 84 },
     barGapFn: (length) => length > 8 ? 3 : length > 6 ? 6 : 11,
+    maxBarHeight: 26,
   });
 }
 
@@ -811,7 +813,7 @@ function drawCountBarChart(canvas, data, options = {}) {
   const pad = options.pad || { top: 4, right: 24, bottom: 2, left: 90 };
   const maxValue = Math.max(...data.map((item) => item.value), 1);
   const barGap = options.barGapFn?.(data.length) ?? (data.length > 8 ? 4 : 7);
-  const barH = Math.min(22, Math.max(7, (height - pad.top - pad.bottom - barGap * (data.length - 1)) / data.length));
+  const barH = Math.min(options.maxBarHeight || 22, Math.max(7, (height - pad.top - pad.bottom - barGap * (data.length - 1)) / data.length));
   const totalHeight = barH * data.length + barGap * (data.length - 1);
   const startY = pad.top + Math.max(0, (height - pad.top - pad.bottom - totalHeight) / 2);
   const draw = (hoveredIndex = -1) => {

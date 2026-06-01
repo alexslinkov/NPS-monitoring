@@ -515,6 +515,11 @@ select {
   margin-top: 10px;
 }
 
+.bottom-grid .panel-heading {
+  min-height: 34px;
+  align-items: flex-start;
+}
+
 .utility-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
