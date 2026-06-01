@@ -78,16 +78,10 @@ async function loadSample() {
 }
 
 async function handleFileUpload(event) {
-  const [file] = event.target.files;
-  if (!file) return;
-  setStatus(`Читаю файл «${file.name}»...`);
-  try {
-    await loadWorkbook(await file.arrayBuffer(), file.name);
-  } catch (error) {
-    console.error(error);
-    setStatus("Не удалось распознать файл. Проверьте, что он соответствует образцу.", true);
-  }
-}
+   event.preventDefault();
+   $("fileInput").value = "";
+   alert("Данная функция в данный момент недоступна");
+ }
 
 async function loadWorkbook(buffer, sourceName) {
   if (!window.XLSX) throw new Error("Библиотека XLSX не загружена");
