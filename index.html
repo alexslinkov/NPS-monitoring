@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="vendor/xlsx.full.min.js"></script>
     <script src="vendor/html2canvas.min.js"></script>
+    <script src="accounts.js"></script>
     <script defer src="app.js"></script>
   </head>
   <body>
@@ -22,15 +23,26 @@
             </div>
           </div>
 
+          <section class="account-card">
+            <div>
+              <p class="eyebrow">Доступ</p>
+              <strong id="accountName">Не выполнен вход</strong>
+              <span id="accountRole">Войдите для работы с данными</span>
+            </div>
+            <button id="accountActionButton" type="button">Войти</button>
+          </section>
+
           <section class="upload-card">
-            <p class="eyebrow">Источник данных</p>
-            <h2>Загрузите Excel-файл</h2>
-            <p class="muted">Поддерживается формат образца из папки «Исходные данные».</p>
-            <label class="file-picker">
+            <p class="eyebrow">Источники данных</p>
+            <h2>Excel-файлы по годам</h2>
+            <p class="muted">Каждый год хранится отдельно. Источник можно обновить новым файлом того же года.</p>
+            <div id="sourceList" class="source-list"></div>
+            <label id="sourceAdd" class="source-add">
               <input id="fileInput" type="file" accept=".xlsx,.xls" />
-              <span>Выбрать файл</span>
+              <span>+ Добавить новый год</span>
+              <small>Загрузить Excel-файл</small>
             </label>
-            <button id="loadSampleButton" class="text-button" type="button">Вернуть образец</button>
+            <input id="sourceUpdateInput" type="file" accept=".xlsx,.xls" hidden />
             <div id="fileStatus" class="file-status">Подключаю образец...</div>
           </section>
 
@@ -39,6 +51,10 @@
               <p class="eyebrow">Срез данных</p>
               <button id="resetFiltersButton" class="text-button" type="button">Сбросить</button>
             </div>
+            <label>
+              <span>Год</span>
+              <select id="yearFilter"></select>
+            </label>
             <label>
               <span>Месяц</span>
               <select id="monthFilter"></select>
@@ -73,6 +89,10 @@
             <p class="subtitle"><span id="reportSubtitle">Загрузка данных...</span> · обновлено <strong id="updatedAt">—</strong></p>
           </div>
           <div class="header-actions">
+          <button id="themeToggleButton" class="theme-toggle" type="button" aria-label="Включить темную тему" aria-pressed="false" data-html2canvas-ignore="true">
+            <span class="theme-toggle-sun">☀</span>
+            <span class="theme-toggle-moon">☾</span>
+          </button>
           <img class="header-logo" src="Логотип/Лого_РЦК-без фона.png" alt="Логотип РЦК" />
           <section class="kpi-grid">
             <button id="topResetFiltersButton" class="kpi-card kpi-reset" type="button" data-html2canvas-ignore="true">
@@ -235,5 +255,26 @@
          </footer>
       </section>
     </main>
+
+    <div id="authModal" class="auth-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <form id="authForm" class="auth-dialog">
+        <p class="eyebrow">Доступ к данным</p>
+        <h2 id="authTitle">Вход в NPS Monitor</h2>
+        <p class="muted">После входа редактор и администратор могут загружать и обновлять Excel-файлы.</p>
+        <label>
+          <span>Логин</span>
+          <input id="authLogin" type="text" autocomplete="username" required />
+        </label>
+        <label>
+          <span>Пароль</span>
+          <input id="authPassword" type="password" autocomplete="current-password" required />
+        </label>
+        <div id="authError" class="auth-error"></div>
+        <div class="auth-actions">
+          <button id="authCancelButton" class="auth-secondary" type="button">Отмена</button>
+          <button class="auth-primary" type="submit">Войти</button>
+        </div>
+      </form>
+    </div>
   </body>
 </html>

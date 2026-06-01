@@ -1,4 +1,7 @@
-const SAMPLE_FILE = "Исходные данные/Мониторинг NPS за 2025 год.xlsx";
+const DEFAULT_SOURCE_FILES = [
+  "Исходные данные/Мониторинг NPS за 2025 год.xlsx",
+  "Исходные данные/Мониторинг NPS за 2026 год.xlsx",
+];
 const MONTHS = [
   "январь", "февраль", "март", "апрель", "май", "июнь",
   "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
@@ -7,6 +10,11 @@ const SHORT_MONTHS = ["янв", "фев", "мар", "апр", "май", "июн"
 const COLORS = ["#4468f2", "#4cc6a4", "#f0a45d", "#e87998", "#8d73dd", "#58a7d9", "#9bb2cf", "#d08cce"];
 const HOVER_COLOR = "#c13b70";
 const TRAINER_COLORS = new Map();
+const SOURCE_DB_NAME = "nps-monitor-sources";
+const SOURCE_STORE_NAME = "workbooks";
+const ACTIVE_YEAR_KEY = "nps-monitor-active-year";
+const ACCOUNT_KEY = "nps-monitor-account";
+const THEME_KEY = "nps-monitor-theme";
 
 const state = {
   rows: [],
@@ -16,6 +24,10 @@ const state = {
   summaryTrends: null,
   sourceName: "",
   reportYear: null,
+  sources: new Map(),
+  pendingUpdateYear: null,
+  account: null,
+  authRequired: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -30,7 +42,13 @@ document.addEventListener("DOMContentLoaded", () => {
    const shell = document.querySelector(".app-shell");
    const sidebar = document.querySelector(".sidebar");
    $("fileInput").addEventListener("change", handleFileUpload);
-   $("loadSampleButton").addEventListener("click", loadSample);
+   $("sourceUpdateInput").addEventListener("change", handleSourceUpdate);
+  $("sourceAdd").addEventListener("click", guardWriteAction);
+  $("accountActionButton").addEventListener("click", handleAccountAction);
+  $("themeToggleButton").addEventListener("click", toggleTheme);
+  $("authCancelButton").addEventListener("click", closeAuthModal);
+  $("authForm").addEventListener("submit", handleLogin);
+  $("yearFilter").addEventListener("change", (event) => activateSource(Number(event.target.value)));
   $("resetFiltersButton").addEventListener("click", resetFilters);
   $("topResetFiltersButton").addEventListener("click", resetFilters);
   $("toggleMissingReportsButton").addEventListener("click", toggleMissingReports);
@@ -64,50 +82,285 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
   window.addEventListener("resize", debounce(renderCharts, 120));
-  loadSample();
+  restoreTheme();
+  restoreAccount();
+  loadDefaultSources();
 });
 
-async function loadSample() {
-   setStatus("Подключаю образец...");
-   try {
-     const response = await fetch(SAMPLE_FILE);
-     if (!response.ok) throw new Error("Файл образца не найден");
-     await loadWorkbook(await response.arrayBuffer(), "Мониторинг NPS за 2025 год.xlsx");
-   } catch (error) {
-     setStatus("Не удалось открыть образец. Выберите Excel-файл вручную.", true);
-   }
- }
+function restoreTheme() {
+  applyTheme(localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light");
+}
+
+function toggleTheme() {
+  applyTheme(document.body.classList.contains("theme-dark") ? "light" : "dark");
+}
+
+function applyTheme(theme) {
+  const isDark = theme === "dark";
+  document.body.classList.toggle("theme-dark", isDark);
+  localStorage.setItem(THEME_KEY, isDark ? "dark" : "light");
+  $("themeToggleButton").setAttribute("aria-pressed", String(isDark));
+  $("themeToggleButton").setAttribute("aria-label", isDark ? "Включить светлую тему" : "Включить темную тему");
+  if (state.rows.length) renderCharts();
+}
+
+function restoreAccount() {
+  const login = sessionStorage.getItem(ACCOUNT_KEY);
+  state.account = getAccounts().find((account) => account.login === login) || null;
+  renderAccount();
+  if (!state.account) openAuthModal("Войдите, чтобы открыть дашборд.", true);
+}
+
+function getAccounts() {
+  return window.NPS_ACCOUNTS || [];
+}
+
+function canEditSources() {
+  return state.account && ["admin", "editor"].includes(state.account.role);
+}
+
+function guardWriteAction(event) {
+  if (canEditSources()) return true;
+  event.preventDefault();
+  event.stopPropagation();
+  openAuthModal(state.account ? "Для загрузки данных войдите как редактор или администратор." : "");
+  return false;
+}
+
+function handleAccountAction() {
+  if (state.account) {
+    sessionStorage.removeItem(ACCOUNT_KEY);
+    state.account = null;
+    renderAccount();
+    setStatus("Вы вышли из учётной записи.");
+    openAuthModal("Войдите, чтобы открыть дашборд.", true);
+    return;
+  }
+  openAuthModal("", true);
+}
+
+function openAuthModal(message = "", required = false) {
+  state.authRequired = required;
+  $("authError").textContent = message;
+  $("authCancelButton").classList.toggle("is-hidden", required);
+  $("authModal").classList.remove("is-hidden");
+  requestAnimationFrame(() => $("authLogin").focus());
+}
+
+function closeAuthModal() {
+  if (state.authRequired && !state.account) return;
+  state.authRequired = false;
+  $("authModal").classList.add("is-hidden");
+  $("authForm").reset();
+  $("authError").textContent = "";
+}
+
+function handleLogin(event) {
+  event.preventDefault();
+  const login = $("authLogin").value.trim();
+  const password = $("authPassword").value;
+  const account = getAccounts().find((item) => item.login === login && item.password === password);
+  if (!account) {
+    $("authError").textContent = "Неверный логин или пароль.";
+    return;
+  }
+  state.account = account;
+  sessionStorage.setItem(ACCOUNT_KEY, account.login);
+  closeAuthModal();
+  renderAccount();
+  setStatus(`Выполнен вход: ${account.label}.`);
+}
+
+function renderAccount() {
+  const account = state.account;
+  $("accountName").textContent = account ? account.login : "Не выполнен вход";
+  $("accountRole").textContent = account ? account.label : "Войдите для работы с данными";
+  $("accountActionButton").textContent = account ? "Выйти" : "Войти";
+  $("sourceAdd").classList.toggle("is-locked", !canEditSources());
+  renderSourceList();
+}
+
+async function loadDefaultSources() {
+  setStatus("Подключаю источники...");
+  let loaded = 0;
+  for (const filePath of DEFAULT_SOURCE_FILES) {
+    try {
+      const response = await fetch(filePath);
+      if (!response.ok) continue;
+      await loadWorkbook(await response.arrayBuffer(), filePath.split("/").pop(), { activate: false });
+      loaded += 1;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+  try {
+    await loadStoredSources();
+  } catch (error) {
+    console.error(error);
+  }
+  const storedActiveYear = Number(localStorage.getItem(ACTIVE_YEAR_KEY));
+  const availableYears = [...state.sources.keys()].sort((a, b) => b - a);
+  const activeYear = state.sources.has(storedActiveYear) ? storedActiveYear : availableYears[0];
+  if (activeYear) activateSource(activeYear);
+  else if (!loaded) setStatus("Не удалось открыть источники. Выберите Excel-файл вручную.", true);
+}
 
 async function handleFileUpload(event) {
+  if (!canEditSources()) {
+    event.target.value = "";
+    openAuthModal();
+    return;
+  }
   const [file] = event.target.files;
   if (!file) return;
   setStatus(`Читаю файл «${file.name}»...`);
   try {
-    await loadWorkbook(await file.arrayBuffer(), file.name);
+    await loadWorkbook(await file.arrayBuffer(), file.name, { persist: true });
+    event.target.value = "";
   } catch (error) {
     console.error(error);
     setStatus("Не удалось распознать файл. Проверьте, что он соответствует образцу.", true);
   }
 }
 
-async function loadWorkbook(buffer, sourceName) {
+async function handleSourceUpdate(event) {
+  if (!canEditSources()) {
+    event.target.value = "";
+    openAuthModal();
+    return;
+  }
+  const [file] = event.target.files;
+  const expectedYear = state.pendingUpdateYear;
+  if (!file || !expectedYear) return;
+  setStatus(`Обновляю данные за ${expectedYear} год...`);
+  try {
+    await loadWorkbook(await file.arrayBuffer(), file.name, { expectedYear, persist: true });
+    event.target.value = "";
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || "Не удалось обновить источник.", true);
+  } finally {
+    state.pendingUpdateYear = null;
+  }
+}
+
+async function loadWorkbook(buffer, sourceName, { expectedYear = null, persist = false, activate = true } = {}) {
   if (!window.XLSX) throw new Error("Библиотека XLSX не загружена");
   const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
   const { rows, missingRows } = parseWorkbook(workbook);
   if (!rows.length) throw new Error("В файле не найдено записей NPS");
-  state.rows = rows;
-  state.missingRows = missingRows;
-  state.summaryTrends = parseSummaryTrends(workbook);
-  state.sourceName = sourceName;
-  state.reportYear = findReportYear(workbook, sourceName);
+  const reportYear = findReportYear(workbook, sourceName);
+  if (expectedYear && reportYear !== expectedYear) {
+    throw new Error(`Выбран файл за ${reportYear} год. Для обновления нужен файл за ${expectedYear} год.`);
+  }
+  state.sources.set(reportYear, {
+    rows,
+    missingRows,
+    summaryTrends: parseSummaryTrends(workbook),
+    sourceName,
+    reportYear,
+  });
+  if (persist) await saveStoredSource(reportYear, sourceName, buffer);
+  if (activate) activateSource(reportYear);
+}
+
+function activateSource(reportYear) {
+  const source = state.sources.get(reportYear);
+  if (!source) return;
+  state.rows = source.rows;
+  state.missingRows = source.missingRows;
+  state.summaryTrends = source.summaryTrends;
+  state.sourceName = source.sourceName;
+  state.reportYear = source.reportYear;
+  localStorage.setItem(ACTIVE_YEAR_KEY, String(reportYear));
+  Object.values(filters).forEach((select) => {
+    select.value = "";
+  });
   populateFilters();
+  populateYearFilter();
+  renderSourceList();
   render();
-  const trainers = unique(rows.map((row) => row.trainer)).length;
-  setStatus(`Загружено: ${rows.length} отчётов NPS · ${missingRows.length} без отчёта · ${trainers} тренеров`);
-  $("footerSource").textContent = `Источник: ${sourceName}`;
+  const trainers = unique(source.rows.map((row) => row.trainer)).length;
+  setStatus(`Активен ${reportYear} год: ${source.rows.length} отчётов NPS · ${source.missingRows.length} без отчёта · ${trainers} тренеров`);
+  $("footerSource").textContent = `Источник: ${source.sourceName}`;
   $("updatedAt").textContent = new Intl.DateTimeFormat("ru-RU", {
     day: "2-digit", month: "2-digit", year: "numeric",
   }).format(new Date());
+}
+
+async function openSourceDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(SOURCE_DB_NAME, 1);
+    request.addEventListener("upgradeneeded", () => {
+      request.result.createObjectStore(SOURCE_STORE_NAME, { keyPath: "reportYear" });
+    });
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+async function saveStoredSource(reportYear, sourceName, buffer) {
+  const db = await openSourceDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(SOURCE_STORE_NAME, "readwrite");
+    transaction.objectStore(SOURCE_STORE_NAME).put({ reportYear, sourceName, buffer });
+    transaction.addEventListener("complete", () => {
+      db.close();
+      resolve();
+    });
+    transaction.addEventListener("error", () => reject(transaction.error));
+  });
+}
+
+async function loadStoredSources() {
+  const db = await openSourceDb();
+  const sources = await new Promise((resolve, reject) => {
+    const request = db.transaction(SOURCE_STORE_NAME).objectStore(SOURCE_STORE_NAME).getAll();
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+  db.close();
+  for (const source of sources) {
+    try {
+      await loadWorkbook(source.buffer, source.sourceName, { expectedYear: source.reportYear, activate: false });
+    } catch (error) {
+      console.error(error);
+    }
+  }
+}
+
+function populateYearFilter() {
+  const select = $("yearFilter");
+  select.innerHTML = "";
+  [...state.sources.keys()].sort((a, b) => b - a).forEach((year) => {
+    const option = document.createElement("option");
+    option.value = year;
+    option.textContent = `${year} год`;
+    option.selected = year === state.reportYear;
+    select.append(option);
+  });
+}
+
+function renderSourceList() {
+  $("sourceList").innerHTML = [...state.sources.values()]
+    .sort((a, b) => b.reportYear - a.reportYear)
+    .map((source) => `<article class="source-item${source.reportYear === state.reportYear ? " is-active" : ""}" data-source-year="${source.reportYear}">
+      <strong>${source.reportYear} год</strong>
+      <small title="${escapeHtml(source.sourceName)}">${escapeHtml(source.sourceName)}</small>
+      <button class="${canEditSources() ? "" : "is-locked"}" type="button" data-update-year="${source.reportYear}">Обновить</button>
+    </article>`)
+    .join("");
+  $("sourceList").querySelectorAll("[data-source-year]").forEach((card) => {
+    card.addEventListener("click", () => activateSource(Number(card.dataset.sourceYear)));
+  });
+  $("sourceList").querySelectorAll("[data-update-year]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (!guardWriteAction(event)) return;
+      state.pendingUpdateYear = Number(button.dataset.updateYear);
+      $("sourceUpdateInput").click();
+    });
+  });
 }
 
 function findReportYear(workbook, sourceName) {
@@ -161,6 +414,7 @@ function parseSummaryTrends(workbook) {
 }
 
 function toTrendValue(value) {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -420,13 +674,12 @@ function matchesFilters(row, ignoredType = "") {
 }
 
 function formatTrendKpi(type) {
-  const values = state.summaryTrends?.[type] || [];
-  if (!values.length) return "—";
-  const hasDetailFilter = filters.trainer.value || filters.training.value || filters.company.value;
-  if (type === "trainings" && hasDetailFilter) {
+  if (type === "trainings") {
     const filteredNps = state.filteredRows.map((row) => row.nps);
     return filteredNps.length ? `${Math.round(average(filteredNps))}%` : "—";
   }
+  const values = state.summaryTrends?.[type] || [];
+  if (!values.length) return "—";
   const month = Number(filters.month.value);
   const annual = state.summaryTrends?.annual?.[type];
   const value = month ? values[month - 1] : Number.isFinite(annual) ? annual : average(values.filter((item) => item !== null));
@@ -572,6 +825,19 @@ function getTrainerColor(name) {
   return TRAINER_COLORS.get(name) || COLORS[0];
 }
 
+function getChartTheme() {
+  const isDark = document.body.classList.contains("theme-dark");
+  return {
+    grid: isDark ? "#3a4a61" : "#edf0f5",
+    axis: isDark ? "#aab6c9" : "#9aa5b6",
+    track: isDark ? "#2a3950" : "#f0f3f8",
+    label: isDark ? "#c9d4e5" : "#67758b",
+    value: isDark ? "#edf3fc" : "#344157",
+    hoverRow: isDark ? "#34263a" : "#fff0f5",
+    empty: isDark ? "#aab6c9" : "#9aa5b6",
+  };
+}
+
 function bindLegendFilters(container, type) {
   container.querySelectorAll("[data-filter-value]").forEach((item) => {
     item.addEventListener("click", () => toggleFilter(type, item.dataset.filterValue));
@@ -580,6 +846,7 @@ function bindLegendFilters(container, type) {
 
 function drawComparisonBarChart(canvas, series, target, options = {}) {
   const { ctx, width, height } = prepareCanvas(canvas);
+  const theme = getChartTheme();
   const pad = { top: 22, right: 15, bottom: 24, left: 34 };
   const chartW = width - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
@@ -588,18 +855,18 @@ function drawComparisonBarChart(canvas, series, target, options = {}) {
   ctx.textBaseline = "middle";
   [0, 25, 50, 75, 100].forEach((tick) => {
     const y = pad.top + chartH - (tick / 100) * chartH;
-    ctx.strokeStyle = "#edf0f5";
+    ctx.strokeStyle = theme.grid;
     ctx.beginPath();
     ctx.moveTo(pad.left, y);
     ctx.lineTo(width - pad.right, y);
     ctx.stroke();
-    ctx.fillStyle = "#9aa5b6";
+    ctx.fillStyle = theme.axis;
     ctx.fillText(tick, pad.left - 8, y);
   });
   ctx.textAlign = "center";
   SHORT_MONTHS.forEach((month, index) => {
     const x = pad.left + (index + 0.5) * (chartW / 12);
-    ctx.fillStyle = "#9aa5b6";
+    ctx.fillStyle = theme.axis;
     ctx.fillText(month, x, height - 9);
   });
   const groupW = chartW / 12;
@@ -613,18 +880,18 @@ function drawComparisonBarChart(canvas, series, target, options = {}) {
     ctx.textBaseline = "middle";
     [0, 25, 50, 75, 100].forEach((tick) => {
       const y = pad.top + chartH - (tick / 100) * chartH;
-      ctx.strokeStyle = "#edf0f5";
+      ctx.strokeStyle = theme.grid;
       ctx.beginPath();
       ctx.moveTo(pad.left, y);
       ctx.lineTo(width - pad.right, y);
       ctx.stroke();
-      ctx.fillStyle = "#9aa5b6";
+      ctx.fillStyle = theme.axis;
       ctx.fillText(tick, pad.left - 8, y);
     });
     ctx.textAlign = "center";
     SHORT_MONTHS.forEach((month, index) => {
       const x = pad.left + (index + 0.5) * groupW;
-      ctx.fillStyle = "#9aa5b6";
+      ctx.fillStyle = theme.axis;
       ctx.fillText(month, x, height - 9);
     });
     regions.length = 0;
@@ -671,6 +938,7 @@ function drawComparisonBarChart(canvas, series, target, options = {}) {
 
 function drawGroupedBarChart(canvas, series, target, options = {}) {
   const { ctx, width, height } = prepareCanvas(canvas);
+  const theme = getChartTheme();
   const pad = { top: 14, right: 15, bottom: 28, left: 34 };
   const chartW = width - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
@@ -692,19 +960,19 @@ function drawGroupedBarChart(canvas, series, target, options = {}) {
     ctx.textBaseline = "middle";
     [0, 25, 50, 75, 100].forEach((tick) => {
       const y = pad.top + chartH - (tick / 100) * chartH;
-      ctx.strokeStyle = "#edf0f5";
+      ctx.strokeStyle = theme.grid;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(pad.left, y);
       ctx.lineTo(width - pad.right, y);
       ctx.stroke();
-      ctx.fillStyle = "#9aa5b6";
+      ctx.fillStyle = theme.axis;
       ctx.fillText(tick, pad.left - 8, y);
     });
     ctx.textAlign = "center";
     SHORT_MONTHS.forEach((month, index) => {
       const x = pad.left + (index + 0.5) * groupW;
-      ctx.fillStyle = "#9aa5b6";
+      ctx.fillStyle = theme.axis;
       ctx.fillText(month, x, height - 9);
     });
     regions.length = 0;
@@ -780,6 +1048,7 @@ function drawTargetLine(ctx, width, pad, chartH, target) {
 
 function drawBarChart(canvas, data, options = {}) {
   const { ctx, width, height } = prepareCanvas(canvas);
+  const theme = getChartTheme();
   if (!data.length) return drawEmpty(ctx, width, height);
   const pad = { top: 4, right: 28, bottom: 2, left: 84 };
   const barGap = data.length > 8 ? 3 : data.length > 6 ? 6 : 11;
@@ -795,17 +1064,17 @@ function drawBarChart(canvas, data, options = {}) {
     const valueW = ((width - pad.left - pad.right) * item.value) / 100;
     const isHovered = index === hoveredIndex;
     if (isHovered) {
-      ctx.fillStyle = "#fff0f5";
+      ctx.fillStyle = theme.hoverRow;
       roundRect(ctx, 0, y - 4, width, barH + 8, 8);
       ctx.fill();
     }
-    ctx.fillStyle = "#f0f3f8";
+    ctx.fillStyle = theme.track;
     roundRect(ctx, pad.left, y, width - pad.left - pad.right, barH, 6);
     ctx.fill();
     ctx.fillStyle = isHovered ? HOVER_COLOR : options.colorFn?.(item, index) || COLORS[index % COLORS.length];
     roundRect(ctx, pad.left, y, valueW, barH, 6);
     ctx.fill();
-    ctx.fillStyle = isHovered ? HOVER_COLOR : "#67758b";
+    ctx.fillStyle = isHovered ? HOVER_COLOR : theme.label;
     ctx.textAlign = "right";
     ctx.fillText(shortenName(item.name), pad.left - 8, y + barH / 2);
     if (isHovered) {
@@ -817,7 +1086,7 @@ function drawBarChart(canvas, data, options = {}) {
       ctx.lineTo(pad.left - 8, y + barH / 2 + 6);
       ctx.stroke();
     }
-    ctx.fillStyle = isHovered ? HOVER_COLOR : "#344157";
+    ctx.fillStyle = isHovered ? HOVER_COLOR : theme.value;
     ctx.textAlign = "left";
     ctx.fillText(`${Math.round(item.value)}%`, pad.left + valueW + 7, y + barH / 2);
     });
@@ -847,6 +1116,7 @@ function drawBarChart(canvas, data, options = {}) {
 
 function drawCountBarChart(canvas, data, options = {}) {
   const { ctx, width, height } = prepareCanvas(canvas);
+  const theme = getChartTheme();
   if (!data.length) return drawEmpty(ctx, width, height);
   const pad = options.pad || { top: 4, right: 24, bottom: 2, left: 90 };
   const maxValue = Math.max(...data.map((item) => item.value), 1);
@@ -863,17 +1133,17 @@ function drawCountBarChart(canvas, data, options = {}) {
       const valueW = ((width - pad.left - pad.right) * item.value) / maxValue;
       const isHovered = index === hoveredIndex;
       if (isHovered) {
-        ctx.fillStyle = "#fff0f5";
+        ctx.fillStyle = theme.hoverRow;
         roundRect(ctx, 0, y - 4, width, barH + 8, 8);
         ctx.fill();
       }
-      ctx.fillStyle = "#f0f3f8";
+      ctx.fillStyle = theme.track;
       roundRect(ctx, pad.left, y, width - pad.left - pad.right, barH, 6);
       ctx.fill();
       ctx.fillStyle = isHovered ? HOVER_COLOR : options.colorFn?.(item, index) || COLORS[index % COLORS.length];
       roundRect(ctx, pad.left, y, valueW, barH, 6);
       ctx.fill();
-      ctx.fillStyle = isHovered ? HOVER_COLOR : "#67758b";
+      ctx.fillStyle = isHovered ? HOVER_COLOR : theme.label;
       ctx.textAlign = "right";
       const rawLabel = options.labelFn?.(item.name) || item.name;
       const label = rawLabel.length > 18 ? `${rawLabel.slice(0, 16)}...` : rawLabel;
@@ -886,7 +1156,7 @@ function drawCountBarChart(canvas, data, options = {}) {
         ctx.lineTo(pad.left - 8, y + barH / 2 + 6);
         ctx.stroke();
       }
-      ctx.fillStyle = isHovered ? HOVER_COLOR : "#344157";
+      ctx.fillStyle = isHovered ? HOVER_COLOR : theme.value;
       ctx.textAlign = "left";
       ctx.fillText(item.value, pad.left + valueW + 7, y + barH / 2);
     });
@@ -980,7 +1250,7 @@ function prepareCanvas(canvas) {
 }
 
 function drawEmpty(ctx, width, height) {
-  ctx.fillStyle = "#9aa5b6";
+  ctx.fillStyle = getChartTheme().empty;
   ctx.font = "12px Inter, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("Нет данных для отображения", width / 2, height / 2);
@@ -997,7 +1267,7 @@ async function exportDashboard() {
   try {
     const canvas = await html2canvas($("dashboardView"), {
       scale: 2,
-      backgroundColor: "#f7f9fc",
+      backgroundColor: document.body.classList.contains("theme-dark") ? "#131e2f" : "#f7f9fc",
       useCORS: true,
       ignoreElements: (element) => element.id === "topResetFiltersButton",
     });
