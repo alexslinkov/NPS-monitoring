@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NPS Monitor</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="vendor/html2canvas.min.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <main class="app-shell sidebar-collapsed">
+      <aside class="sidebar">
+        <button id="sidebarToggle" class="sidebar-toggle" type="button">Данные и фильтры</button>
+        <div>
+          <div class="brand">
+            <span class="brand-mark">N</span>
+            <div>
+              <strong>NPS Monitor</strong>
+              <span>Панель качества обучения</span>
+            </div>
+          </div>
+
+          <section class="upload-card">
+            <p class="eyebrow">Источник данных</p>
+            <h2>Загрузите Excel-файл</h2>
+            <p class="muted">Поддерживается формат образца из папки «Исходные данные».</p>
+            <label class="file-picker">
+              <input id="fileInput" type="file" accept=".xlsx,.xls" />
+              <span>Выбрать файл</span>
+            </label>
+            <button id="loadSampleButton" class="text-button" type="button">Вернуть образец</button>
+            <div id="fileStatus" class="file-status">Подключаю образец...</div>
+          </section>
+
+          <section class="filters">
+            <div class="section-heading">
+              <p class="eyebrow">Срез данных</p>
+              <button id="resetFiltersButton" class="text-button" type="button">Сбросить</button>
+            </div>
+            <label>
+              <span>Месяц</span>
+              <select id="monthFilter"></select>
+            </label>
+            <label>
+              <span>Тренер</span>
+              <select id="trainerFilter"></select>
+            </label>
+            <label>
+              <span>Тренинг</span>
+              <select id="trainingFilter"></select>
+            </label>
+            <label>
+              <span>Предприятие</span>
+              <select id="companyFilter"></select>
+            </label>
+          </section>
+
+          <button id="exportButton" class="export-button sidebar-export" type="button">
+            <span>Сохранить как PNG</span>
+            <small>Для отправки</small>
+          </button>
+        </div>
+
+      </aside>
+
+      <section id="dashboardView" class="dashboard-view">
+        <header class="dashboard-header">
+          <div class="header-title">
+            <p class="eyebrow">Мониторинг удовлетворённости</p>
+            <h1>Дашборд NPS по обучению</h1>
+            <p class="subtitle"><span id="reportSubtitle">Загрузка данных...</span> · обновлено <strong id="updatedAt">—</strong></p>
+          </div>
+          <div class="header-actions">
+          <img class="header-logo" src="Логотип/Лого_РЦК-без фона.png" alt="Логотип РЦК" />
+          <section class="kpi-grid">
+            <button id="topResetFiltersButton" class="kpi-card kpi-reset" type="button" data-html2canvas-ignore="true">
+              <span>Все срезы</span>
+              <strong>Сбросить<br />фильтры</strong>
+            </button>
+            <article class="kpi-card kpi-primary">
+              <span>NPS тренингов</span>
+              <strong id="avgTrainingNps">—</strong>
+            </article>
+            <article class="kpi-card kpi-factory">
+              <span>NPS фабрик</span>
+              <strong id="avgFactoryNps">—</strong>
+            </article>
+            <article class="kpi-card kpi-filter-card">
+              <span>Тренингов</span>
+              <strong id="eventsCount">—</strong>
+              <div id="kpiTrainingSelection" class="kpi-selection"></div>
+              <div class="kpi-popover">
+                <input id="kpiTrainingSearch" type="search" placeholder="Найти тренинг" aria-label="Поиск тренинга" autocomplete="off" />
+                <div class="kpi-suggestions"></div>
+                <button type="button" data-kpi-filter="training" data-input-id="kpiTrainingSearch">Выбрать</button>
+              </div>
+            </article>
+            <article class="kpi-card kpi-filter-card">
+              <span>Тренеры</span>
+              <strong id="trainersCount">—</strong>
+              <div id="kpiTrainerSelection" class="kpi-selection"></div>
+              <div class="kpi-popover">
+                <input id="kpiTrainerSearch" type="search" placeholder="Найти тренера" aria-label="Поиск тренера" autocomplete="off" />
+                <div class="kpi-suggestions"></div>
+                <button type="button" data-kpi-filter="trainer" data-input-id="kpiTrainerSearch">Выбрать</button>
+              </div>
+            </article>
+            <article class="kpi-card kpi-filter-card">
+              <span>Предприятия</span>
+              <strong id="companiesCount">—</strong>
+              <div id="kpiCompanySelection" class="kpi-selection"></div>
+              <div class="kpi-popover">
+                <input id="kpiCompanySearch" type="search" placeholder="Найти предприятие" aria-label="Поиск предприятия" autocomplete="off" />
+                <div class="kpi-suggestions"></div>
+                <button type="button" data-kpi-filter="company" data-input-id="kpiCompanySearch">Выбрать</button>
+              </div>
+            </article>
+          </section>
+          </div>
+        </header>
+
+        <section class="chart-grid">
+          <article class="panel panel-wide">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Динамика</p>
+                <h2>NPS тренингов по месяцам</h2>
+              </div>
+              <div class="panel-heading-side">
+                <span class="target-note">Цель · 75%</span>
+                <div class="chart-legend">
+                  <span class="legend-dot legend-trainings">NPS тренингов</span>
+                  <span class="legend-dot legend-factories">NPS фабрик процессов</span>
+                </div>
+              </div>
+            </div>
+            <div class="chart-wrap chart-large">
+              <canvas id="trendChart"></canvas>
+            </div>
+          </article>
+
+          <article class="panel panel-wide">
+            <div class="panel-heading trainer-trend-heading">
+              <div>
+                <p class="eyebrow">Динамика по команде</p>
+                <h2>NPS тренеров по месяцам</h2>
+              </div>
+              <div class="trainer-trend-meta">
+                <span class="target-note">Цель · 75%</span>
+                <div id="trainerTrendLegend" class="line-legend"></div>
+              </div>
+            </div>
+            <div class="chart-wrap chart-team">
+              <canvas id="trainerTrendChart"></canvas>
+            </div>
+          </article>
+
+        </section>
+
+        <section class="bottom-grid">
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Рейтинг</p>
+                <h2>NPS по тренерам</h2>
+              </div>
+              <span class="panel-note">все тренеры</span>
+            </div>
+            <div class="chart-wrap chart-medium">
+              <canvas id="trainerChart"></canvas>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Загрузка команды</p>
+                <h2 class="compact-heading">Кол-во проведенных тренингов</h2>
+              </div>
+              <span class="panel-note">кол-во</span>
+            </div>
+            <div class="chart-wrap chart-medium">
+              <canvas id="trainerCountChart"></canvas>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Эффективность</p>
+                <h2>NPS по тренингам</h2>
+              </div>
+              <span class="panel-note">все тренинги</span>
+            </div>
+            <div class="chart-wrap chart-medium">
+              <canvas id="trainingNpsChart"></canvas>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Структура</p>
+                <h2>Тренинги</h2>
+              </div>
+            </div>
+            <div class="chart-wrap chart-medium">
+              <canvas id="trainingChart"></canvas>
+            </div>
+          </article>
+
+        </section>
+
+        <section class="utility-grid" data-html2canvas-ignore="true">
+          <article class="panel missing-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Контроль заполнения</p>
+                <h2>Нет отчёта NPS</h2>
+              </div>
+              <button id="toggleMissingReportsButton" class="missing-toggle" type="button" aria-expanded="false">Показать результаты</button>
+              <span id="missingReportsCount" class="panel-note"></span>
+            </div>
+            <div id="missingPairs" class="missing-list missing-pairs is-hidden"></div>
+          </article>
+        </section>
+
+        <footer>
+          <span>NPS Monitor</span>
+          <a href="https://rckspb.ru/" target="_blank" rel="noopener noreferrer">Региональный центр компетенций Санкт-Петербурга</a>
+          <span id="footerSource">Источник: —</span>
+        </footer>
+      </section>
+    </main>
+  </body>
+</html>
