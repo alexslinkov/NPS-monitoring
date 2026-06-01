@@ -28,7 +28,7 @@ const filters = {
 document.addEventListener("DOMContentLoaded", () => {
    const shell = document.querySelector(".app-shell");
    const sidebar = document.querySelector(".sidebar");
-   $("filePickerLabel").addEventListener("click", showUploadDisabledAlert);
+   $("fileUploadButton").addEventListener("click", showUploadDisabledAlert);
    $("loadSampleButton").addEventListener("click", loadSample);
   $("resetFiltersButton").addEventListener("click", resetFilters);
   $("topResetFiltersButton").addEventListener("click", resetFilters);
