@@ -26,10 +26,10 @@ const filters = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-  const shell = document.querySelector(".app-shell");
-  const sidebar = document.querySelector(".sidebar");
-  $("fileInput").addEventListener("change", handleFileUpload);
-  $("loadSampleButton").addEventListener("click", loadSample);
+   const shell = document.querySelector(".app-shell");
+   const sidebar = document.querySelector(".sidebar");
+   $("filePickerLabel").addEventListener("click", showUploadDisabledAlert);
+   $("loadSampleButton").addEventListener("click", loadSample);
   $("resetFiltersButton").addEventListener("click", resetFilters);
   $("topResetFiltersButton").addEventListener("click", resetFilters);
   $("toggleMissingReportsButton").addEventListener("click", toggleMissingReports);
@@ -67,19 +67,18 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function loadSample() {
-  setStatus("Подключаю образец...");
-  try {
-    const response = await fetch(SAMPLE_FILE);
-    if (!response.ok) throw new Error("Файл образца не найден");
-    await loadWorkbook(await response.arrayBuffer(), "Мониторинг NPS за 2025 год.xlsx");
-  } catch (error) {
-    setStatus("Не удалось открыть образец. Выберите Excel-файл вручную.", true);
-  }
-}
+   setStatus("Подключаю образец...");
+   try {
+     const response = await fetch(SAMPLE_FILE);
+     if (!response.ok) throw new Error("Файл образца не найден");
+     await loadWorkbook(await response.arrayBuffer(), "Мониторинг NPS за 2025 год.xlsx");
+   } catch (error) {
+     setStatus("Не удалось открыть образец. Выберите Excel-файл вручную.", true);
+   }
+ }
 
-async function handleFileUpload(event) {
+ function showUploadDisabledAlert(event) {
    event.preventDefault();
-   $("fileInput").value = "";
    alert("Данная функция в данный момент недоступна");
  }
 
