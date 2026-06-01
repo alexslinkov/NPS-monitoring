@@ -15,6 +15,7 @@ const state = {
   filteredMissingRows: [],
   summaryTrends: null,
   sourceName: "",
+  reportYear: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -28,7 +29,7 @@ const filters = {
 document.addEventListener("DOMContentLoaded", () => {
    const shell = document.querySelector(".app-shell");
    const sidebar = document.querySelector(".sidebar");
-   $("fileUploadButton").addEventListener("click", showUploadDisabledAlert);
+   $("fileInput").addEventListener("change", handleFileUpload);
    $("loadSampleButton").addEventListener("click", loadSample);
   $("resetFiltersButton").addEventListener("click", resetFilters);
   $("topResetFiltersButton").addEventListener("click", resetFilters);
@@ -77,10 +78,17 @@ async function loadSample() {
    }
  }
 
- function showUploadDisabledAlert(event) {
-   event.preventDefault();
-   alert("Данная функция в данный момент недоступна");
- }
+async function handleFileUpload(event) {
+  const [file] = event.target.files;
+  if (!file) return;
+  setStatus(`Читаю файл «${file.name}»...`);
+  try {
+    await loadWorkbook(await file.arrayBuffer(), file.name);
+  } catch (error) {
+    console.error(error);
+    setStatus("Не удалось распознать файл. Проверьте, что он соответствует образцу.", true);
+  }
+}
 
 async function loadWorkbook(buffer, sourceName) {
   if (!window.XLSX) throw new Error("Библиотека XLSX не загружена");
@@ -91,6 +99,7 @@ async function loadWorkbook(buffer, sourceName) {
   state.missingRows = missingRows;
   state.summaryTrends = parseSummaryTrends(workbook);
   state.sourceName = sourceName;
+  state.reportYear = findReportYear(workbook, sourceName);
   populateFilters();
   render();
   const trainers = unique(rows.map((row) => row.trainer)).length;
@@ -99,6 +108,30 @@ async function loadWorkbook(buffer, sourceName) {
   $("updatedAt").textContent = new Intl.DateTimeFormat("ru-RU", {
     day: "2-digit", month: "2-digit", year: "numeric",
   }).format(new Date());
+}
+
+function findReportYear(workbook, sourceName) {
+  const sourceYear = extractYear(sourceName);
+  if (sourceYear) return sourceYear;
+
+  const metadataYear = Object.values(workbook.Props || {}).map(extractYear).find(Boolean);
+  if (metadataYear) return metadataYear;
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheetNameYear = extractYear(sheetName);
+    if (sheetNameYear) return sheetNameYear;
+    const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: null, raw: true });
+    const sheetYear = matrix.slice(0, 10).flat().map(extractYear).find(Boolean);
+    if (sheetYear) return sheetYear;
+  }
+
+  return new Date().getFullYear();
+}
+
+function extractYear(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.getFullYear();
+  const match = String(value ?? "").match(/\b(20\d{2})\b/);
+  return match ? Number(match[1]) : null;
 }
 
 function parseWorkbook(workbook) {
@@ -974,12 +1007,13 @@ async function exportDashboard() {
 
 function buildSubtitle(rows) {
   const selected = [];
-  if (filters.month.value) selected.push(`${MONTHS[Number(filters.month.value) - 1]} 2025 года`);
+  const year = state.reportYear || new Date().getFullYear();
+  if (filters.month.value) selected.push(`${MONTHS[Number(filters.month.value) - 1]} ${year} года`);
   if (filters.trainer.value) selected.push(filters.trainer.value);
   if (filters.training.value) selected.push(filters.training.value);
   if (filters.company.value) selected.push(filters.company.value);
   const missing = state.filteredMissingRows.length;
-  return `${selected.length ? selected.join(" · ") : "Все данные за 2025 год"} · ${rows.length} отчётов NPS${missing ? ` · ${missing} без отчёта` : ""}`;
+  return `${selected.length ? selected.join(" · ") : `Все данные за ${year} год`} · ${rows.length} отчётов NPS${missing ? ` · ${missing} без отчёта` : ""}`;
 }
 
 function groupBy(rows, keyFn) {
