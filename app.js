@@ -226,7 +226,9 @@ function toMissingRecord(month, day, trainer, training, company, nps) {
 
 function normalizeTrainingName(value) {
   const training = String(value).trim();
-  return normalize(training) === "мрп" ? "Мет.реш.проблем" : training;
+  if (normalize(training) === "мрп") return "Мет.реш.проблем";
+  if (normalize(training) === "smed" || normalize(training) === "смед") return "СМЕД";
+  return training;
 }
 
 function normalizeCompanyName(value) {
