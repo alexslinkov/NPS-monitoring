@@ -332,6 +332,11 @@ select {
   cursor: pointer;
 }
 
+.kpi-filter-card:hover {
+  border-color: var(--hover);
+  background: #fff8fb;
+}
+
 .kpi-popover {
   position: absolute;
   top: calc(100% + 7px);
@@ -346,7 +351,6 @@ select {
   box-shadow: var(--shadow);
 }
 
-.kpi-filter-card:hover .kpi-popover,
 .kpi-filter-card.is-open .kpi-popover,
 .kpi-filter-card:focus-within .kpi-popover {
   display: grid;
