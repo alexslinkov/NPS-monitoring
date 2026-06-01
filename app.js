@@ -153,6 +153,10 @@ function parseSummaryTrends(workbook) {
   return {
     trainings: trainings.slice(trainingsStart, trainingsStart + 12).map(toTrendValue),
     factories: factories.slice(factoriesStart, factoriesStart + 12).map(toTrendValue),
+    annual: {
+      trainings: toTrendValue(trainings[trainingsStart + 12]),
+      factories: toTrendValue(factories[factoriesStart + 12]),
+    },
   };
 }
 
@@ -418,8 +422,14 @@ function matchesFilters(row, ignoredType = "") {
 function formatTrendKpi(type) {
   const values = state.summaryTrends?.[type] || [];
   if (!values.length) return "—";
+  const hasDetailFilter = filters.trainer.value || filters.training.value || filters.company.value;
+  if (type === "trainings" && hasDetailFilter) {
+    const filteredNps = state.filteredRows.map((row) => row.nps);
+    return filteredNps.length ? `${Math.round(average(filteredNps))}%` : "—";
+  }
   const month = Number(filters.month.value);
-  const value = month ? values[month - 1] : average(values.filter((item) => item !== null));
+  const annual = state.summaryTrends?.annual?.[type];
+  const value = month ? values[month - 1] : Number.isFinite(annual) ? annual : average(values.filter((item) => item !== null));
   return Number.isFinite(value) ? `${Math.round(value)}%` : "—";
 }
 
